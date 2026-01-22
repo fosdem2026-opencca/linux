@@ -12,6 +12,14 @@
 	model = "Radxa ROCK 5B";
 	compatible = "radxa,rock-5b", "rockchip,rk3588";
 
+#ifdef CONFIG_DEMO_OPENCCA
+	// Demo: Reserve for Identity mapping in CVM
+	gpu_guest_ram: gpu-guest-ram@80000000 {
+    reg = <0x0 0x80000000 0x0 0x20000000>;
+                    
+    };
+#endif
+
 	aliases {
 		mmc0 = &sdhci;
 		mmc1 = &sdmmc;
