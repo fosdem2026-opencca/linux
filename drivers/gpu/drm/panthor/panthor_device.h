@@ -76,6 +76,9 @@ struct panthor_device {
 	/** @phys_addr: Physical address of the iomem region. */
 	phys_addr_t phys_addr;
 
+	/** @iomem_size: Size of the iomem region. */
+	resource_size_t iomem_size;
+
 	/** @iomem: CPU mapping of the IOMEM region. */
 	void __iomem *iomem;
 

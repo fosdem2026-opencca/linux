@@ -600,7 +600,16 @@ static int iova_reserve_iommu_regions(struct device *dev,
 
 static bool dev_is_untrusted(struct device *dev)
 {
+	#ifdef CONFIG_OPENCCA_DEMO
+	bool b = dev_is_pci(dev) && to_pci_dev(dev)->untrusted;
+	int demo = !strcmp(dev_name(dev), "70000000.gpu");
+	if (demo) {
+		 pr_info("Make GPU dev_trusted\n");
+	}
+	return b && !demo;
+	#else
 	return dev_is_pci(dev) && to_pci_dev(dev)->untrusted;
+	#endif
 }
 
 static bool dev_use_swiotlb(struct device *dev, size_t size,

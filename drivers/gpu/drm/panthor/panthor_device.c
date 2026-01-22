@@ -210,6 +210,7 @@ int panthor_device_init(struct panthor_device *ptdev)
 		return PTR_ERR(ptdev->iomem);
 
 	ptdev->phys_addr = res->start;
+	ptdev->iomem_size = resource_size(res);
 
 	ret = devm_pm_runtime_enable(ptdev->base.dev);
 	if (ret)
@@ -374,6 +375,18 @@ static vm_fault_t panthor_mmio_vm_fault(struct vm_fault *vmf)
 	if (active)
 		pgprot = pgprot_noncached(pgprot);
 
+	#ifdef CONFIG_OPENCCA_DEMO
+	// Demo: Ensure NS shared bit is set in IPA space
+	// when mapping mmio page
+	if (is_realm_world()) {
+		unsigned long ipa = pfn << PAGE_SHIFT;
+
+		if (ipa >= ptdev->phys_addr &&
+			ipa <= (ptdev->phys_addr + ptdev->iomem_size)) {
+			pgprot = pgprot_decrypted(pgprot);
+		}
+	}
+	#endif
 	ret = vmf_insert_pfn_prot(vma, vmf->address, pfn, pgprot);
 
 out_unlock:

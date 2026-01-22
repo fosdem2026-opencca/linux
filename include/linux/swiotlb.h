@@ -9,6 +9,7 @@
 #include <linux/limits.h>
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
+#include <linux/of.h>
 
 struct device;
 struct page;
@@ -172,6 +173,15 @@ static inline struct io_tlb_pool *swiotlb_find_pool(struct device *dev,
 static inline bool is_swiotlb_force_bounce(struct device *dev)
 {
 	struct io_tlb_mem *mem = dev->dma_io_tlb_mem;
+
+	#ifdef CONFIG_OPENCCA_DEMO
+	struct device_node *np = dev_of_node(dev);
+	if (np && of_property_read_bool(np, "demo-disable-swiotlb")) {
+		pr_info_once("demo-disable-swiotlb set. Skipping swiotlb for %s.\n",
+		dev_name(dev));
+		return false;
+	}
+	#endif
 
 	return mem && mem->force_bounce;
 }
