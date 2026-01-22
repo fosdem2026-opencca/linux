@@ -50,6 +50,8 @@
 
 #include "sys_regs.h"
 
+#include "demo/mmio.h"
+
 static enum kvm_mode kvm_mode = KVM_MODE_DEFAULT;
 
 enum kvm_wfx_trap_policy {
@@ -1967,6 +1969,12 @@ int kvm_arch_vm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 	struct kvm *kvm = filp->private_data;
 	void __user *argp = (void __user *)arg;
 	struct kvm_device_attr attr;
+
+	#ifdef CONFIG_OPENCCA_DEMO
+	if (demo_is_kvm_vmfd(filp, ioctl, arg)) {
+		return demo_do_kvm_vmfd(kvm, filp, ioctl, arg);
+	}
+	#endif
 
 	switch (ioctl) {
 	case KVM_CREATE_IRQCHIP: {

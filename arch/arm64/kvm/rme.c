@@ -13,6 +13,8 @@
 
 #include <asm/kvm_pgtable.h>
 
+#include "demo/mmio.h"
+
 static unsigned long rmm_feat_reg0;
 
 static bool rme_supports(unsigned long feature)
@@ -683,6 +685,12 @@ static int realm_create_protected_data_page(struct realm *realm,
 	phys_addr_t dst_phys, src_phys;
 	int ret;
 
+	#ifdef CONFIG_OPENCCA_DEMO
+	if (demo_ipa_in_identity(ipa)) {
+		dst_page = demo_identity_page(ipa);
+	}
+	#endif
+
 	dst_phys = page_to_phys(dst_page);
 	src_phys = page_to_phys(src_page);
 
@@ -746,6 +754,12 @@ int realm_map_protected(struct realm *realm,
 			unsigned long map_size,
 			struct kvm_mmu_memory_cache *memcache)
 {
+	#ifdef CONFIG_OPENCCA_DEMO
+	if (demo_ipa_in_identity(base_ipa)) {		
+		dst_page = demo_identity_page(base_ipa);
+	}
+	#endif
+
 	phys_addr_t dst_phys = page_to_phys(dst_page);
 	phys_addr_t rd = virt_to_phys(realm->rd);
 	unsigned long phys = dst_phys;
@@ -1626,3 +1640,121 @@ void kvm_init_rme(void)
 
 	static_branch_enable(&kvm_rme_is_available);
 }
+
+
+#ifdef CONFIG_OPENCCA_DEMO
+#define REALM_NS_ACCESSIBLE(ia_bits) (BIT(ia_bits - 1))
+
+static int demo_ioremap_ns_realm(struct kvm_vcpu *vcpu,
+                                        phys_addr_t ioremap_pa,
+                                        unsigned long ioremap_ipa,
+                                        unsigned long size)
+{
+    int ret;
+    struct kvm *kvm = vcpu->kvm;
+    struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
+    struct realm *realm;
+    phys_addr_t rd;
+    const int map_level = 3; /* XXX: PAGE_SIZE, mapping only */
+    unsigned long ipa = ioremap_ipa;
+    unsigned long pa  = ioremap_pa;
+    unsigned long desc;
+    int level;
+
+    if (!kvm_is_realm(kvm)) {
+        pr_info("kvm does not run realm vm!\n");
+        return 0;
+    }
+
+    realm = &kvm->arch.realm;
+    rd = virt_to_phys(realm->rd);
+
+    kvm_mmu_topup_memory_cache(memcache,
+                               kvm_mmu_cache_min_pages(vcpu->arch.hw_mmu));
+
+    while (pa < ioremap_pa + size) {
+        // WARN_ON(realm_is_addr_protected(realm, ipa));
+        ipa |= REALM_NS_ACCESSIBLE(realm->ia_bits);
+
+        /* device memory */
+        desc = pa |
+               PTE_S2_MEMATTR(MT_S2_FWB_DEVICE_nGnRE) |
+               (3 << 6); /* RW perms for now */
+
+        ret = rmi_rtt_map_unprotected(rd, ipa, map_level, desc);
+        pr_info("rmi_rtt_map_unprotected: ipa=%lx pa=%lx ret=%d\n", ipa, pa, ret);
+
+        if (RMI_RETURN_STATUS(ret) == RMI_ERROR_RTT) {
+            /* Create missing RTTs and retry */
+            level = RMI_RETURN_INDEX(ret);
+
+            ret = realm_create_rtt_levels(realm, ipa, level, map_level, memcache);
+            if (WARN_ON(ret))
+                return -ENXIO;
+
+            ret = rmi_rtt_map_unprotected(rd, ipa, map_level, desc);
+        }
+
+        if (ret)
+            return -ENXIO;
+
+        pa += 4096;
+        ipa += 4096;
+    }
+
+    return 0;
+}
+
+int demo_is_kvm_vmfd(struct file *filp, unsigned int ioctl, unsigned long arg)
+{
+    (void)filp;
+    (void)arg;
+    return ioctl == KVM_DEMO_IOREMAP;
+}
+
+int demo_do_kvm_vmfd(struct kvm *kvm,
+                                   struct file *filp,
+                                   unsigned int ioctl,
+                                   unsigned long arg)
+{
+    struct kvm_demo_ioremap ioremap;
+    void __user *argp = (void __user *)arg;
+    struct kvm_vcpu *vcpu;
+    int ret;
+
+    (void)filp;
+
+	pr_info("demo_do_kvm_vmfd\n");
+
+    if (ioctl != KVM_DEMO_IOREMAP)
+        return 0;
+
+    if (copy_from_user(&ioremap, argp, sizeof(ioremap))) {
+        pr_info("error copy from user\n");
+        return -EFAULT;
+    }
+
+    pr_info("ioremap: ipa=%lx pa=%llx size=%lu flags=%lx\n",
+             ioremap.ipa,
+             (unsigned long long)ioremap.pa,
+             (unsigned long)ioremap.size,
+             ioremap.flags);
+
+    if (!(ioremap.flags & DEMO_IOREMAP_REALM_NS))
+        return 0;
+
+    /* XXX: always use vcpu 0 */
+    vcpu = xa_load(&kvm->vcpu_array, 0);
+    if (!vcpu)
+        return -ENOENT;
+
+    pr_info("calling demo_ioremap_ns_realm\n");
+    ret = demo_ioremap_ns_realm(vcpu, ioremap.pa, ioremap.ipa, ioremap.size);
+    if (ret < 0)
+        pr_info("demo_ioremap_ns_realm returned: %d\n", ret);
+
+    return ret;
+}
+EXPORT_SYMBOL(demo_do_kvm_vmfd);
+
+#endif
