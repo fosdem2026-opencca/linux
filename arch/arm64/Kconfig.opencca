@@ -7,4 +7,12 @@ config OPENCCA_HW_DEBUG
 	  Enable hardware debugging
 
 
+config OPENCCA_DEMO
+	bool "Enable Device GPU Demo"
+    default n
+	help
+	  Demo to demostrate interaction with GPU in CVM.
+
+
+
 endmenu
