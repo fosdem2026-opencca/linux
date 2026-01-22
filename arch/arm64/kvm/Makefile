@@ -5,6 +5,8 @@
 
 ccflags-y += -I $(src)
 
+obj-y += demo/
+
 include $(srctree)/virt/kvm/Makefile.kvm
 
 obj-$(CONFIG_KVM) += kvm.o
